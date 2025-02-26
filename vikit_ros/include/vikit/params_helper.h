@@ -33,21 +33,16 @@ T getParam(const std::string& node, const std::string& name, const T& defaultVal
         std::thread([node, name, promise = std::move(resultPromise)]() mutable {
             try {
                 std::string command = "ros2 param get /" + node + " " + name;
-                FILE* pipe = popen(command.c_str(), "r");
+                std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
                 if (!pipe) {
                     throw std::runtime_error("popen() failed!");
                 }
+                std::ostringstream resultStream;
                 char buffer[128];
-                std::string result = "";
-                while (!feof(pipe)) {
-                    if (fgets(buffer, 128, pipe) != nullptr) {
-                        result += buffer;
-                    }
+                while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
+                    resultStream << buffer;
                 }
-                auto rc = pclose(pipe);
-                if (rc != 0) {
-                    throw std::runtime_error("Command failed with return code: " + std::to_string(rc));
-                }
+                std::string result = resultStream.str();
 
                 // parse the result
                 size_t pos = result.find(": ");
@@ -59,7 +54,7 @@ T getParam(const std::string& node, const std::string& name, const T& defaultVal
             } catch (const std::exception& e) {
                 promise.set_exception(std::make_exception_ptr(e));
             }
-        }).detach();
+        }).join();
 
         std::string valueStr = resultFuture.get();
 
