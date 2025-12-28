@@ -16,25 +16,25 @@ namespace camera_loader {
 bool loadFromRosNs(const rclcpp::Node::SharedPtr & nh, const std::string& ns, vk::AbstractCamera*& cam)
 {
   bool res = true;
-  std::string cam_model(getParam<std::string>(ns, "cam_model", ""));
+  std::string cam_model(getRemoteParam<std::string>(nh, ns, "cam_model", ""));
   if(cam_model == "Ocam")
   {
-    cam = new vk::OmniCamera(getParam<std::string>(nh, ns+"/cam_calib_file", ""));
+    cam = new vk::OmniCamera(getRemoteParam<std::string>(nh, ns, "cam_calib_file", ""));
   }
   else if(cam_model == "Pinhole")
   {
     cam = new vk::PinholeCamera(
-        getParam<int>(ns, "cam_width"),
-        getParam<int>(ns, "cam_height"),
-        getParam<double>(ns, "scale", 1.0),
-        getParam<double>(ns, "cam_fx"),
-        getParam<double>(ns, "cam_fy"),
-        getParam<double>(ns, "cam_cx"),
-        getParam<double>(ns, "cam_cy"),
-        getParam<double>(ns, "cam_d0", 0.0),
-        getParam<double>(ns, "cam_d1", 0.0),
-        getParam<double>(ns, "cam_d2", 0.0),
-        getParam<double>(ns, "cam_d3", 0.0));
+        getRemoteParam<int>(nh, ns, "cam_width", 0),
+        getRemoteParam<int>(nh, ns, "cam_height", 0),
+        getRemoteParam<double>(nh, ns, "scale", 1.0),
+        getRemoteParam<double>(nh, ns, "cam_fx", 0.0),
+        getRemoteParam<double>(nh, ns, "cam_fy", 0.0),
+        getRemoteParam<double>(nh, ns, "cam_cx", 0.0),
+        getRemoteParam<double>(nh, ns, "cam_cy", 0.0),
+        getRemoteParam<double>(nh, ns, "cam_d0", 0.0),
+        getRemoteParam<double>(nh, ns, "cam_d1", 0.0),
+        getRemoteParam<double>(nh, ns, "cam_d2", 0.0),
+        getRemoteParam<double>(nh, ns, "cam_d3", 0.0));
   }
   else if(cam_model == "EquidistantCamera")
   {

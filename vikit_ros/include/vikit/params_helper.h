@@ -15,65 +15,50 @@
 #include <sstream>
 #include <string>
 #include <rclcpp/rclcpp.hpp>
+#include <rcl_interfaces/srv/get_parameters.hpp>
 #include <iostream>
-#include <thread>
-#include <future>
 #include <cstdio>
 #include <stdexcept>
-#include <sstream>
+#include <type_traits>
 
 namespace vk {
 
 template <typename T>
 T getParam(const std::string& node, const std::string& name, const T& defaultValue) {
+    // Keep popen as a absolute fallback if no Node handle is available
+    // But this is very slow!
     try {
-        std::promise<std::string> resultPromise;
-        std::future<std::string> resultFuture = resultPromise.get_future();
-
-        std::thread([node, name, promise = std::move(resultPromise)]() mutable {
-            try {
-                std::string command = "ros2 param get /" + node + " " + name;
-                std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
-                if (!pipe) {
-                    throw std::runtime_error("popen() failed!");
-                }
-                std::ostringstream resultStream;
-                char buffer[128];
-                while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
-                    resultStream << buffer;
-                }
-                std::string result = resultStream.str();
-
-                // parse the result
-                size_t pos = result.find(": ");
-                if (pos != std::string::npos) {
-                    promise.set_value(result.substr(pos + 2)); // return the substring after ":"
-                } else {
-                    promise.set_value(""); // if not found ":", return empty string
-                }
-            } catch (const std::exception& e) {
-                promise.set_exception(std::make_exception_ptr(e));
-            }
-        }).join();
-
-        std::string valueStr = resultFuture.get();
-
-        // size check
-        if (!valueStr.empty()) {
-            // type covert
-            std::stringstream ss(valueStr);
-            T value;
-            if (ss >> value) {
-                return value;
-            } else {
-                return defaultValue; // convert failed, return default value
-            }
-        } else {
-            return defaultValue; // size 0 , return default value
+        std::string full_node = node;
+        if (!full_node.empty() && full_node[0] != '/') full_node = "/" + full_node;
+        
+        std::string command = "ros2 param get " + full_node + " " + name + " 2>/dev/null";
+        std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(command.c_str(), "r"), pclose);
+        if (!pipe) {
+            return defaultValue;
         }
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
-        return defaultValue; // some exception, return default value
+        std::ostringstream resultStream;
+        char buffer[128];
+        while (fgets(buffer, sizeof(buffer), pipe.get()) != nullptr) {
+            resultStream << buffer;
+        }
+        std::string result = resultStream.str();
+
+        size_t pos = result.find(": ");
+        if (pos != std::string::npos) {
+            std::string valueStr = result.substr(pos + 2);
+            if (!valueStr.empty() && valueStr.back() == '\n') valueStr.pop_back();
+
+            if (!valueStr.empty()) {
+                std::stringstream ss(valueStr);
+                T value;
+                if (ss >> value) {
+                    return value;
+                }
+            }
+        }
+        return defaultValue;
+    } catch (...) {
+        return defaultValue;
     }
 }
 
@@ -101,40 +86,61 @@ template<typename T>
 T getParam(const rclcpp::Node::SharedPtr &nh, const std::string& name, const T& defaultValue)
 {
   T v;
-  if(nh->has_parameter(name))
+  if(nh->get_parameter(name, v))
   {
-    v = nh->get_parameter(name).get_value<T>();
-    std::ostringstream oss;
-    oss << v;
-    RCLCPP_INFO(nh->get_logger(), "Found parameter: %s, value: %s", name.c_str(), oss.str().c_str());
     return v;
   }
-  else
-  {
-    std::ostringstream oss;
-    oss << defaultValue;
-    RCLCPP_WARN(nh->get_logger(), "Cannot find value for parameter: %s, assigning default: %s", name.c_str(), oss.str().c_str());
+  
+  // If not found locally, it might be a prefix for a remote node or a local param not yet declared
+  if (!nh->has_parameter(name)) {
+      nh->declare_parameter(name, defaultValue);
+      if (nh->get_parameter(name, v)) return v;
   }
-	  nh->declare_parameter(name, defaultValue);
+
   return defaultValue;
+}
+
+// New function for cross-node parameter access
+template<typename T>
+T getRemoteParam(const rclcpp::Node::SharedPtr &nh, const std::string& remote_node_name, const std::string& param_name, const T& defaultValue)
+{
+    // Try local first just in case
+    std::string full_name = remote_node_name + "." + param_name; // common convention
+    T v;
+    if (nh->get_parameter(full_name, v)) return v;
+    if (nh->get_parameter(param_name, v)) return v;
+
+    // Use SyncParametersClient for high performance cross-node access
+    try {
+        auto parameters_client = std::make_shared<rclcpp::SyncParametersClient>(nh, remote_node_name);
+        // Wait briefly for the service to be available
+        if (parameters_client->wait_for_service(std::chrono::milliseconds(100))) {
+            auto values = parameters_client->get_parameters({param_name});
+            if (!values.empty() && values[0].get_type() != rclcpp::ParameterType::PARAMETER_NOT_SET) {
+                return values[0].get_value<T>();
+            }
+        }
+    } catch (...) {
+        // Fallback to popen if client fails
+        return getParam<T>(remote_node_name, param_name, defaultValue);
+    }
+
+    return defaultValue;
 }
 
 template<typename T>
 T getParam(const rclcpp::Node::SharedPtr &nh, const std::string& name)
 {
   T v;
-  int i = 0;
-  while(!nh->get_parameter(name, v))
-  {
-    RCLCPP_ERROR(nh->get_logger(), "Cannot find value for parameter: %s, will try again.", name.c_str());
-    if ((i ++) >= 5) return T();
+  if (nh->get_parameter(name, v)) {
+    RCLCPP_INFO_STREAM(nh->get_logger(), "Found parameter: " << name << ", value: " << v);
+    return v;
   }
 
-  std::ostringstream oss;
-  oss << v;
-  
-  RCLCPP_INFO(nh->get_logger(), "Found parameter: %s, value: %s", name.c_str(), oss.str().c_str());
-  return v;
+  // If not found, try to declare it (this might be useful if the parameter is expected to be there)
+  // or just return a default constructed T.
+  RCLCPP_ERROR_STREAM(nh->get_logger(), "Cannot find value for parameter: " << name << ". Returning default.");
+  return T();
 }
 
 } // namespace vk
