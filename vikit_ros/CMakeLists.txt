@@ -50,7 +50,8 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(Eigen3 REQUIRED)
-find_package(Sophus REQUIRED)
+set(Sophus_INCLUDE_DIRS "/home/lhk/ThirdParty/Sophus1.22.10/include")
+FIND_PACKAGE(Sophus REQUIRED PATHS "/home/lhk/ThirdParty/Sophus1.22.10")
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 set(dependencies
@@ -77,7 +78,7 @@ add_library(${PROJECT_NAME} SHARED ${SOURCEFILES})
 target_include_directories(${PROJECT_NAME} PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
-  ${CMAKE_CURRENT_SOURCE_DIR}  # Add this line to include the project root directory
+  # ${CMAKE_CURRENT_SOURCE_DIR}  # Add this line to include the project root directory
   ${Sophus_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
 )
@@ -108,6 +109,10 @@ set_target_properties(${PROJECT_NAME} PROPERTIES
   PUBLIC_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
+
+
+
+ament_export_targets(${PROJECT_NAME} HAS_LIBRARY_TARGET)
 # Ensure the include directory is correctly set for downstream packages
 ament_export_include_directories(include)
 

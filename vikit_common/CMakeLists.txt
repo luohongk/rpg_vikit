@@ -30,7 +30,8 @@ SET(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS} -O3 -fsee -fomit-frame-pointer -
 # Add plain cmake packages 
 FIND_PACKAGE(OpenCV REQUIRED)
 FIND_PACKAGE(Eigen REQUIRED)
-FIND_PACKAGE(Sophus REQUIRED)
+set(Sophus_INCLUDE_DIRS "/home/lhk/ThirdParty/Sophus1.22.10/include")
+FIND_PACKAGE(Sophus REQUIRED PATHS "/home/lhk/ThirdParty/Sophus1.22.10")
 FIND_PACKAGE(fmt REQUIRED)
 
 # Include dirs
@@ -74,7 +75,7 @@ LIST(APPEND SOURCEFILES src/atan_camera.cpp
 ADD_LIBRARY(${PROJECT_NAME} SHARED ${SOURCEFILES})
 TARGET_LINK_LIBRARIES(${PROJECT_NAME}
   ${OpenCV_LIBS}
-  ${Sophus_LIBRARIES}
+  # ${Sophus_LIBRARIES}
   fmt::fmt)
 
 IF(USE_ROS)
